@@ -2,8 +2,6 @@ import {
   BlockEvent,
   Finding,
   HandleBlock,
-  HandleTransaction,
-  TransactionEvent,
   FindingSeverity,
   FindingType,
 } from "forta-agent";
@@ -14,9 +12,14 @@ import { THRESHOLD } from "./constants";
 // If the difference between the current block and the previous one
 // is greater than a threshold, an alert should be emitted
 
-const blockDifficulty: { blockNumber: Number; difficulty: string } = {
+const lastDifficulty: { blockNumber: Number; difficulty: string } = {
   blockNumber: 0,
   difficulty: "0x0",
+};
+
+const updateLastDifficulty = (number: Number, difficulty: string) => {
+  lastDifficulty.blockNumber = number;
+  lastDifficulty.difficulty = difficulty;
 };
 
 function provideHandleBlock(threshold: string): HandleBlock {
@@ -24,15 +27,18 @@ function provideHandleBlock(threshold: string): HandleBlock {
     const findings: Finding[] = [];
 
     const { difficulty, number } = blockEvent.block;
-    if (blockDifficulty.blockNumber === 0) return findings;
 
-    const bigThreshold = new BigNumber(threshold);
+    if (lastDifficulty.blockNumber === 0) {
+      updateLastDifficulty(number, difficulty);
+      return findings;
+    }
 
-    // check if difference between current - prev > threshold
+    // check if *absolute* difference between current and prev > threshold
     if (
       new BigNumber(difficulty)
-        .minus(new BigNumber(blockDifficulty.difficulty))
-        .isGreaterThan(bigThreshold)
+        .minus(new BigNumber(lastDifficulty.difficulty))
+        .abs()
+        .isGreaterThan(new BigNumber(threshold))
     ) {
       findings.push(
         Finding.fromObject({
@@ -42,13 +48,16 @@ function provideHandleBlock(threshold: string): HandleBlock {
           alertId: "DIFFICULTY",
           type: FindingType.Unknown,
           severity: FindingSeverity.Low,
+          metadata: {
+            blockNumber: number.toString(10),
+            difficulty,
+          },
         })
       );
     }
 
     // update last block information
-    blockDifficulty.blockNumber = number;
-    blockDifficulty.difficulty = difficulty;
+    updateLastDifficulty(number, difficulty);
 
     return findings;
   };
